@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<title>本格野球ゲーム（CPU対戦）</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--panel:#fff;--accent:#1565c0;}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,Arial;background:#0b6623;color:#111;display:flex;justify-content:center;padding:12px;}
+  .wrap{width:100%;max-width:980px;background:var(--panel);border-radius:12px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,.25);}
+  header{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  h1{margin:0;font-size:18px}
+  .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  select, button{padding:8px 10px;border-radius:8px;border:1px solid #ccc;background:white;font-size:14px}
+  .layout{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}
+  .left{flex:1;min-width:320px}
+  .right{width:300px;min-width:240px}
+  canvas#field{width:100%;height:auto;background:linear-gradient(#7cc77b,#3a8a3a);border-radius:8px;display:block}
+  .panel{background:#fff;border-radius:8px;padding:10px;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+  .row{display:flex;justify-content:space-between;align-items:center}
+  .bases{display:flex;gap:6px;justify-content:center;margin-top:8px}
+  .base{width:38px;height:24px;border-radius:4px;background:#eee;border:1px solid #ccc;display:flex;align-items:center;justify-content:center;font-weight:700;color:#999}
+  .on{background:#ffd54f;color:#000;border-color:#f0a500}
+  .log{max-height:160px;overflow:auto;font-size:13px}
+  .muted{font-size:13px;color:#555}
+  .bigbtn{background:var(--accent);color:white;border:none;padding:10px 14px;border-radius:8px;font-weight:700}
+  footer{margin-top:10px;text-align:center;font-size:13px;color:#444}
+  @media(max-width:760px){ .layout{flex-direction:column} .right{width:100%} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>本格野球ゲーム（CPU対戦）</h1>
+    <div class="controls">
+      <label>イニング
+        <select id="inningSelect"><option>3</option><option>5</option><option>7</option></select>
+      </label>
+      <label>難易度
+        <select id="difficulty"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>
+      </label>
+      <button onclick="location.href='index.html'">← 戻る</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="left">
+      <div class="panel">
+        <div class="row">
+          <div>イニング: <span id="inningDisplay">1</span> / <span id="inningTotal">3</span></div>
+          <div>攻撃: <span id="half">Top</span></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px">
+          <div>得点: <strong id="scoreA">0</strong> - <strong id="scoreB">0</strong></div>
+          <div>アウト: <strong id="outs">0</strong></div>
+        </div>
+        <div class="bases" aria-hidden="true">
+          <div id="base1" class="base">1</div>
+          <div id="base2" class="base">2</div>
+          <div id="base3" class="base">3</div>
+        </div>
+      </div>
+
+      <canvas id="field" width="760" height="400"></canvas>
+
+      <div class="panel">
+        <div id="msg"><strong>「試合スタート」を押して開始してください</strong></div>
+        <div class="muted" style="margin-top:6px">操作：バッターは画面タップ/Spaceでスイング、ピッチャーは投球コース選択→画面タップで投げる</div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+          <button id="startMatch" class="bigbtn">試合スタート</button>
+          <button id="nextPlay" disabled>次プレイへ</button>
+          <button id="autoBtn">自動進行: OFF</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="right">
+      <div class="panel">
+        <div style="font-weight:700">プレイヤー設定</div>
+        <div style="margin-top:8px">
+          <label>あなたの役割:
+            <select id="playerRole"><option value="batter" selected>バッター</option><option value="pitcher">ピッチャー</option></select>
+          </label>
+        </div>
+        <div style="margin-top:8px">
+          <label>投球コース:
+            <select id="pitchZone"><option value="in">内角</option><option value="mid" selected>真ん中</option><option value="out">外角</option></select>
+          </label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div style="font-weight:700">チーム</div>
+        <div style="margin-top:6px">チームA（あなた）: <span id="teamAScore">0</span></div>
+        <div style="margin-top:6px">チームB（CPU）: <span id="teamBScore">0</span></div>
+      </div>
+
+      <div class="panel">
+        <div style="font-weight:700">ログ（最近）</div>
+        <div id="log" class="log"></div>
+      </div>
+    </aside>
+  </div>
+
+  <footer>（簡易AI搭載） 追加・改善したい点があれば教えてください。</footer>
+</div>
+
+<script>
+/* --- ゲーム状態 --- */
+const canvas = document.getElementById('field');
+const ctx = canvas.getContext('2d');
+let INNINGS = 3;
+let difficulty = 'normal';
+const TEAM_PLAYER = 0, TEAM_CPU = 1;
+
+let inning = 1;
+let half = 'Top'; // Top: A bats, Bottom: B bats
+let outs = 0;
+let bases = [false,false,false];
+let scores = [0,0];
+let playerRole = 'batter'; // or pitcher
+let pitchZone = 'mid';
+let isRunning = false;
+let autoAdvance = false;
+let logs = [];
+let battingInProgress = false;
+
+/* UI refs */
+const inningDisplay = document.getElementById('inningDisplay');
+const inningTotal = document.getElementById('inningTotal');
+const halfEl = document.getElementById('half');
+const outsEl = document.getElementById('outs');
+const scoreA = document.getElementById('scoreA');
+const scoreB = document.getElementById('scoreB');
+const baseEls = [document.getElementById('base1'), document.getElementById('base2'), document.getElementById('base3')];
+const msgEl = document.getElementById('msg');
+const logEl = document.getElementById('log');
+const teamAScore = document.getElementById('teamAScore');
+const teamBScore = document.getElementById('teamBScore');
+
+document.getElementById('inningSelect').addEventListener('change', e=>{ INNINGS = parseInt(e.target.value); inningTotal.textContent = INNINGS; });
+document.getElementById('difficulty').addEventListener('change', e=>{ difficulty = e.target.value; });
+document.getElementById('playerRole').addEventListener('change', e=>{ playerRole = e.target.value; });
+document.getElementById('pitchZone').addEventListener('change', e=>{ pitchZone = e.target.value; });
+
+document.getElementById('startMatch').addEventListener('click', startMatch);
+document.getElementById('nextPlay').addEventListener('click', nextPlay);
+document.getElementById('autoBtn').addEventListener('click', ()=>{ autoAdvance = !autoAdvance; document.getElementById('autoBtn').textContent = '自動進行: ' + (autoAdvance?'ON':'OFF'); });
+
+/* キー / タッチ */
+window.addEventListener('keydown', e=>{ if(!isRunning) return; if(e.code==='Space'){ playerAction(); e.preventDefault(); }});
+canvas.addEventListener('touchstart', e=>{ if(!isRunning) return; playerAction(); e.preventDefault(); }, {passive:false});
+canvas.addEventListener('click', e=>{ if(!isRunning) return; playerAction(); });
+
+/* 描画フィールド（簡易） */
+function drawField(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // background
+  ctx.fillStyle = '#9adf9a';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  // bases positions
+  const cx = canvas.width/2, cy = canvas.height/2 + 60;
+  const size = 28;
+  const b1 = {x: cx + 180, y: cy};
+  const b2 = {x: cx, y: cy - 160};
+  const b3 = {x: cx - 180, y: cy};
+  ctx.fillStyle='#fff';
+  ctx.fillRect(b1.x - size/2, b1.y - size/2, size, size);
+  ctx.fillRect(b2.x - size/2, b2.y - size/2, size, size);
+  ctx.fillRect(b3.x - size/2, b3.y - size/2, size, size);
+  if(bases[0]){ ctx.fillStyle='#ffeb3b'; ctx.fillRect(b1.x-size/2+5,b1.y-size/2+5,size-10,size-10); }
+  if(bases[1]){ ctx.fillStyle='#ffeb3b'; ctx.fillRect(b2.x-size/2+5,b2.y-size/2+5,size-10,size-10); }
+  if(bases[2]){ ctx.fillStyle='#ffeb3b'; ctx.fillRect(b3.x-size/2+5,b3.y-size/2+5,size-10,size-10); }
+  // pitcher's mound and batter marker
+  ctx.fillStyle='#bdbdbd'; ctx.beginPath(); ctx.arc(cx-60, cy+14, 18,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#333'; ctx.fillRect(cx+200, cy-12, 6, 24);
+}
+
+/* ログ */
+function pushLog(t){
+  logs.unshift((new Date()).toLocaleTimeString() + ' — ' + t);
+  if(logs.length>40) logs.length = 40;
+  logEl.innerHTML = logs.map(l=>'• '+l).join('<br>');
+}
+
+/* UI更新 */
+function updateUI(){
+  inningDisplay.textContent = inning;
+  halfEl.textContent = half;
+  outsEl.textContent = outs;
+  scoreA.textContent = scores[0];
+  scoreB.textContent = scores[1];
+  teamAScore.textContent = scores[0];
+  teamBScore.textContent = scores[1];
+  baseEls.forEach((el,i)=>el.classList.toggle('on', bases[i]));
+  drawField();
+}
+
+/* 試合開始 */
+function startMatch(){
+  inning = 1; half = 'Top'; outs = 0; bases = [false,false,false]; scores=[0,0];
+  isRunning = true;
+  pushLog('試合開始: ' + INNINGS + 'イニング');
+  document.getElementById('startMatch').disabled = true;
+  updateUI();
+  nextPlay();
+}
+
+/* 次プレイ */
+function nextPlay(){
+  if(!isRunning) return;
+  document.getElementById('nextPlay').disabled = true;
+  const battingTeam = (half==='Top') ? TEAM_PLAYER : TEAM_CPU;
+  // If player controls batting and it's their batting turn:
+  if(battingTeam===TEAM_PLAYER && playerRole==='batter'){
+    preparePlayerBatting();
+  } else if(battingTeam===TEAM_CPU && playerRole==='batter'){
+    // CPU bats
+    pushLog('CPUが打席に立ちます');
+    setTimeout(()=>cpuBat(), 600);
+  } else if(battingTeam===TEAM_PLAYER && playerRole==='pitcher'){
+    // Player pitching: CPU bats
+    pushLog('あなたは投手。CPUが打ちます。投球ボタンで投げてください');
+    // enable player to pitch via playerAction (tap triggers)
+    document.getElementById('nextPlay').disabled = false;
+  } else {
+    // CPU vs CPU
+    pushLog('CPUプレイ中...');
+    setTimeout(()=>cpuPlay(), 600);
+  }
+}
+
+/* プレイヤー打撃準備 */
+function preparePlayerBatting(){
+  pushLog('あなたの打席です。投球を待ってタップ/Spaceでスイング!');
+  battingInProgress = true;
+  // Simulate a pitch after short delay
+  setTimeout(()=>{
+    const pitch = cpuThrow();
+    pushLog('投球: ' + pitch.zone + ' 速度:' + pitch.speed.toFixed(1));
+    // wait for player's swing: handled by playerAction which calls evaluateHit when swing occurs
+    // Timeout -> auto miss
+    const t0 = setTimeout(()=>{ if(battingInProgress){ battingInProgress=false; evaluateHit(pitch,false); } }, 1300);
+    // store temp handlers
+    window._pendingPitch = {pitch, timeout:t0};
+  }, 500);
+}
+
+/* プレイヤーの操作（タップ/Space） */
+function playerAction(){
+  // If batting and waiting:
+  if(battingInProgress && window._pendingPitch){
+    const pitch = window._pendingPitch.pitch;
+    clearTimeout(window._pendingPitch.timeout);
+    window._pendingPitch = null;
+    battingInProgress = false;
+    evaluateHit(pitch, true);
+    return;
+  }
+  // If player is pitcher and it's player's pitching turn:
+  const battingTeam = (half==='Top') ? TEAM_PLAYER : TEAM_CPU;
+  if(playerRole==='pitcher' && battingTeam !== TEAM_PLAYER){
+    // player pitches to CPU
+    const zone = document.getElementById('pitchZone').value;
+    const speedBase = difficulty==='easy'?3.5: difficulty==='hard'?4.8:4.2;
+    const speed = speedBase + Math.random()*0.8;
+    pushLog('あなたの投球: ' + zone + ' 速度:' + speed.toFixed(1));
+    // evaluate CPU batting
+    const hitChance = difficulty==='easy'?0.65: difficulty==='hard'?0.35:0.5;
+    if(Math.random() < hitChance){
+      pushLog('CPUが打った！ヒット');
+      scoreRunForTeam(TEAM_CPU,'single');
+    } else {
+      pushLog('凡打 / 三振');
+      recordOut();
+    }
+    if(autoAdvance) setTimeout(()=>nextPlay(),600); else document.getElementById('nextPlay').disabled=false;
+    return;
+  }
+  // else no-op
+}
+
+/* CPU打撃 */
+function cpuBat(){
+  const pitch = cpuThrow();
+  const swingProb = difficulty==='easy'?0.6: difficulty==='hard'?0.78:0.68;
+  const willSwing = Math.random() < swingProb;
+  if(!willSwing){
+    pushLog('CPU: 見送った');
+    // called strike if mid
+    if(pitch.zone==='mid'){ pushLog('ストライク！'); recordOut(); }
+    if(autoAdvance) setTimeout(()=>nextPlay(),600); else document.getElementById('nextPlay').disabled=false;
+    return;
+  }
+  const q = Math.random();
+  if(q>0.78){ pushLog('CPU: 強い当たり！ヒット'); scoreRunForTeam(TEAM_CPU,'double'); }
+  else if(q>0.45){ pushLog('CPU: ヒット'); scoreRunForTeam(TEAM_CPU,'single'); }
+  else { pushLog('CPU: 凡打'); recordOut(); }
+  if(autoAdvance) setTimeout(()=>nextPlay(),600); else document.getElementById('nextPlay').disabled=false;
+}
+
+/* CPU投球生成 */
+function cpuThrow(){
+  const zones = ['in','mid','out'];
+  const zone = zones[(Math.random()*3)|0];
+  const baseSpeed = difficulty==='easy'?3.2: difficulty==='hard'?4.6:3.9;
+  const speed = baseSpeed + Math.random()*1.2;
+  return {zone,speed};
+}
+
+/* 打撃評価（playerSwung:boolean） */
+function evaluateHit(pitch, playerSwung){
+  if(!playerSwung){
+    if(pitch.zone==='mid'){ pushLog('見逃し: ストライク'); recordOut(); }
+    else { pushLog('見逃し: ボール'); }
+    if(autoAdvance) setTimeout(()=>nextPlay(),600); else document.getElementById('nextPlay').disabled=false;
+    return;
+  }
+  // timing roughness
+  const timing = Math.random() + (1/(pitch.speed));
+  if(timing > 0.9){ pushLog('ナイスヒット！'); scoreRunForTeam(TEAM_PLAYER,'double'); }
+  else if(timing > 0.6){ pushLog('ヒット'); scoreRunForTeam(TEAM_PLAYER,'single'); }
+  else { pushLog('空振り / 凡打'); recordOut(); }
+  if(autoAdvance) setTimeout(()=>nextPlay(),600); else document.getElementById('nextPlay').disabled=false;
+}
+
+/* スコア & 走塁（簡易） */
+function scoreRunForTeam(team, hitType){
+  const adv = hitType==='single'?1: hitType==='double'?2: hitType==='triple'?3:4;
+  // advance existing runners
+  for(let i=2;i>=0;i--){
+    if(bases[i]){
+      const dest = i + adv;
+      if(dest >= 3) { scores[team]++; bases[i]=false; }
+      else { bases[dest]=true; bases[i]=false; }
+    }
+  }
+  // batter to base
+  if(adv >= 4){ scores[team]++; }
+  else { bases[adv-1]=true; }
+  pushLog((team===TEAM_PLAYER?'あなた':'CPU') + 'の得点。現在 ' + scores[0] + ' - ' + scores[1]);
+  updateUI();
+}
+
+/* アウト記録 */
+function recordOut(){
+  outs++;
+  pushLog('アウト！ (' + outs + 'アウト)');
+  if(outs >= 3) endHalf();
+  else updateUI();
+}
+
+/* 半イニング終了 */
+function endHalf(){
+  pushLog('半イニング終了: ' + half);
+  outs = 0; bases = [false,false,false];
+  if(half === 'Top') half = 'Bottom';
+  else { inning++; half = 'Top'; }
+  if(inning > INNINGS){ finishMatch(); return; }
+  updateUI();
+  if(autoAdvance) setTimeout(()=>nextPlay(),800); else document.getElementById('nextPlay').disabled = false;
+}
+
+/* 試合終了 */
+function finishMatch(){
+  isRunning = false;
+  let res = '引き分け';
+  if(scores[0] > scores[1]) res = 'あなたの勝ち！';
+  else if(scores[1] > scores[0]) res = 'CPUの勝ち...';
+  pushLog('試合終了: ' + scores[0] + ' - ' + scores[1] + ' → ' + res);
+  msgEl.innerHTML = '<strong>試合終了: ' + res + '</strong>';
+  document.getElementById('startMatch').disabled = false;
+  document.getElementById('nextPlay').disabled = true;
+}
+
+/* CPU主導プレイ（汎用） */
+function cpuPlay(){
+  cpuBat();
+  if(!autoAdvance) document.getElementById('nextPlay').disabled = false;
+}
+
+/* 初期化 */
+document.getElementById('inningTotal').textContent = INNINGS;
+updateUI();
+pushLog('準備完了');
+
+/* optional: expose for debugging */ window._game = {startMatch, nextPlay, scoreRunForTeam, recordOut};
+</script>
+</body>
+</html>
