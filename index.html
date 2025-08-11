@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ミニツール集</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    section { margin-bottom: 30px; padding: 15px; border: 1px solid #ccc; border-radius: 10px; }
+    h2 { margin-top: 0; }
+    input, select, button { margin: 5px 0; padding: 5px; }
+  </style>
+</head>
+<body>
+
+  <!-- 時計 -->
+  <section>
+    <h2>⏰ 時計</h2>
+    <div id="clock" style="font-size: 1.5em;"></div>
+  </section>
+
+  <!-- 電卓 -->
+  <section>
+    <h2>🧮 電卓</h2>
+    <input type="text" id="calcInput" placeholder="例: 2+3*4">
+    <button onclick="calc()">計算</button>
+    <div id="calcResult"></div>
+  </section>
+
+  <!-- 翻訳 -->
+  <section>
+    <h2>🌏 翻訳</h2>
+    <textarea id="translateInput" rows="3" cols="30" placeholder="翻訳したい文章"></textarea><br>
+    <select id="langSelect">
+      <option value="en">英語</option>
+      <option value="ja">日本語</option>
+      <option value="fr">フランス語</option>
+      <option value="es">スペイン語</option>
+    </select>
+    <button onclick="translateText()">翻訳</button>
+    <div id="translateResult"></div>
+  </section>
+
+  <!-- テトリス -->
+  <section>
+    <h2>🎮 テトリス</h2>
+    <a href="tetris.html">
+      <button>テトリスで遊ぶ</button>
+    </a>
+  </section>
+
+  <script>
+    // 時計
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clock').textContent =
+        now.toLocaleTimeString('ja-JP', { hour12: false });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // 電卓
+    function calc() {
+      try {
+        const input = document.getElementById('calcInput').value;
+        const result = eval(input);
+        document.getElementById('calcResult').textContent = '結果: ' + result;
+      } catch {
+        document.getElementById('calcResult').textContent = '計算エラー';
+      }
+    }
+
+    // 翻訳
+    function translateText() {
+      const text = document.getElementById('translateInput').value;
+      const lang = document.getElementById('langSelect').value;
+      fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=ja|${lang}`)
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById('translateResult').textContent =
+            data.responseData.translatedText;
+        })
+        .catch(() => {
+          document.getElementById('translateResult').textContent = '翻訳エラー';
+        });
+    }
+  </script>
+
+</body>
+</html>
