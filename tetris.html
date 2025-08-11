@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<title>ミニテトリス</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body { font-family: system-ui, -apple-system, "Helvetica Neue", Arial; display:flex; flex-direction:column; align-items:center; padding:20px; background:#f0f0f3; }
+  canvas { background:#111; image-rendering: pixelated; border-radius:6px; margin-bottom: 10px; }
+  button { padding:8px 12px; margin-top:6px; border-radius:6px; border:1px solid #ccc; background:white; }
+</style>
+</head>
+<body>
+<h1>ミニテトリス</h1>
+<canvas id="board" width="200" height="400"></canvas>
+<div>
+  <button onclick="startGame()">スタート</button>
+  <button onclick="pauseGame()">一時停止</button>
+</div>
+<div style="margin-top:10px;">
+  <button onclick="location.href='index.html'">← 戻る</button>
+</div>
+
+<script>
+const COLS = 10, ROWS = 20, BLOCK = 20;
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+const SHAPES = {
+  I: [[1,1,1,1]], O: [[1,1],[1,1]], T: [[0,1,0],[1,1,1]],
+  S: [[0,1,1],[1,1,0]], Z: [[1,1,0],[0,1,1]],
+  J: [[1,0,0],[1,1,1]], L: [[0,0,1],[1,1,1]]
+};
+const COLORS = {I:'#0ff',O:'#ff0',T:'#a0f',S:'#0f0',Z:'#f00',J:'#00f',L:'#fa0'};
+function rotate(m){return m[0].map((_,i)=>m.map(r=>r[i])).reverse()}
+function createMatrix(w,h){return Array.from({length:h},()=>Array(w).fill(0))}
+function randomPiece(){
+  const keys = Object.keys(SHAPES), k = keys[(Math.random()*keys.length)|0];
+  return {shape:k, matrix:SHAPES[k].map(r=>r.slice()), x:COLS/2-2, y:0};
+}
+function drawMatrix(mat, off){
+  mat.forEach((row,y)=>row.forEach((v,x)=>{
+    if(v){ctx.fillStyle=COLORS[current.shape];ctx.fillRect((x+off.x)*BLOCK,(y+off.y)*BLOCK,BLOCK,BLOCK)}
+  }));
+}
+function merge(board, piece){
+  piece.matrix.forEach((row,y)=>row.forEach((v,x)=>{
+    if(v) board[y+piece.y][x+piece.x]=piece.shape;
+  }));
+}
+function collide(board,piece){
+  return piece.matrix.some((row,y)=>row.some((v,x)=>v && (board[y+piece.y]&&board[y+piece.y][x+piece.x])!==0));
+}
+let board = createMatrix(COLS,ROWS);
+let current = randomPiece();
+let dropCounter=0, dropInterval=500, lastTime=0, running=false, paused=false;
+function update(time=0){
+  if(!running){draw();return;}
+  const delta=time-lastTime; lastTime=time;
+  if(!paused){dropCounter+=delta; if(dropCounter>dropInterval){drop();}}
+  draw(); requestAnimationFrame(update);
+}
+function drop(){
+  current.y++;
+  if(collide(board,current)){current.y--; merge(board,current); resetPiece(); sweep();}
+  dropCounter=0;
+}
+function resetPiece(){
+  current=randomPiece();
+  if(collide(board,current)){running=false; alert("ゲームオーバー"); board=createMatrix(COLS,ROWS);}
+}
+function sweep(){
+  for(let y=ROWS-1;y>=0;y--){
+    if(board[y].every(v=>v)){board.splice(y,1);board.unshift(Array(COLS).fill(0));y++;}
+  }
+}
+function draw(){
+  ctx.fillStyle='#111';ctx.fillRect(0,0,canvas.width,canvas.height);
+  board.forEach((row,y)=>row.forEach((v,x)=>{if(v){ctx.fillStyle=COLORS[v];ctx.fillRect(x*BLOCK,y*BLOCK,BLOCK,BLOCK);}}));
+  drawMatrix(current.matrix, current);
+}
+document.addEventListener('keydown',e=>{
+  if(!running)return;
+  if(e.key==='ArrowLeft'){current.x--; if(collide(board,current))current.x++;}
+  if(e.key==='ArrowRight'){current.x++; if(collide(board,current))current.x--;}
+  if(e.key==='ArrowDown'){drop();}
+  if(e.key==='ArrowUp'){current.matrix=rotate(current.matrix); if(collide(board,current)){current.matrix=rotate(rotate(rotate(current.matrix)));}}
+});
+function startGame(){running=true; paused=false; board=createMatrix(COLS,ROWS); current=randomPiece(); lastTime=0; update();}
+function pauseGame(){paused=!paused;}
+draw();
+</script>
+</body>
+</html>
